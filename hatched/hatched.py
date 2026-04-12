@@ -124,15 +124,15 @@ def _plot_geom(geom, colspec=""):
 def _build_mask(cnt):
     lr = [LinearRing(p[:, [1, 0]]) for p in cnt if len(p) >= 4]
 
-    mask = None
-    for r in lr:
-        if mask is None:
-            mask = Polygon(r)
-        else:
-            if r.is_ccw:
-                mask = mask.union(Polygon(r).buffer(0.5))
-            else:
-                mask = mask.difference(Polygon(r).buffer(-0.5))
+    fills = [Polygon(r).buffer(0.5) for r in lr if r.is_ccw]
+    holes = [Polygon(r).buffer(-0.5) for r in lr if not r.is_ccw]
+
+    if not fills:
+        return None
+
+    mask = shapely.ops.unary_union(fills)
+    if holes:
+        mask = mask.difference(shapely.ops.unary_union(holes))
 
     return mask
 
