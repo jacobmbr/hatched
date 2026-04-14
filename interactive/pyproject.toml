@@ -1,0 +1,11 @@
+[project]
+name = "hatched-interactive"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "vsketch",
+    "hatched",
+]
+
+[tool.uv.sources]
+hatched = { path = "..", editable = true }

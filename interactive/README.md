@@ -2,14 +2,6 @@
 
 Interactive parameter tuning for `hatched` using [vsketch](https://github.com/abey79/vsketch).
 
-## Setup
-
-```bash
-uv venv
-uv pip install vsketch
-uv pip install -e ..
-```
-
 ## Usage
 
 ```bash
