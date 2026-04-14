@@ -5,17 +5,15 @@ Interactive parameter tuning for `hatched` using [vsketch](https://github.com/ab
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install vsketch
-pip install -e ..
+uv venv
+uv pip install vsketch
+uv pip install -e ..
 ```
 
 ## Usage
 
 ```bash
-source .venv/bin/activate
-vsk run sketch_hatched.py
+uv run vsk run sketch_hatched.py
 ```
 
 This opens a GUI with sliders for all `hatched` parameters. Set `image_path` to the path of your input image, then tune:
