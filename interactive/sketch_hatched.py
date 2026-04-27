@@ -7,7 +7,7 @@ import hatched
 
 class HatchedSketch(vsketch.SketchClass):
     # Image
-    image_path = vsketch.Param("", choices=[])  # set via CLI or edit below
+    image_path = vsketch.Param("/Users/Jacob/Desktop/osk.png", choices=[])  # set via CLI or edit below
     scale = vsketch.Param(1.0, 0.1, 5.0, step=0.1)
     blur = vsketch.Param(10, 0, 50)
 
