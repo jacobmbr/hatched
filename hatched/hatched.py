@@ -1,6 +1,7 @@
 import math
 import os
 import random
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Iterable, Tuple, Union
 
 import cv2
@@ -8,6 +9,7 @@ import matplotlib.collections
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+import shapely
 import shapely.ops
 import svgwrite as svgwrite
 from shapely.geometry import LinearRing, MultiLineString, Polygon
@@ -122,17 +124,36 @@ def _plot_geom(geom, colspec=""):
 
 
 def _build_mask(cnt):
-    lr = [LinearRing(p[:, [1, 0]]) for p in cnt if len(p) >= 4]
+    polys = []
+    ccw = []
+    for p in cnt:
+        if len(p) < 4:
+            continue
+        # swap (row, col) -> (x, y)
+        coords = p[:, ::-1]
+        # Shoelace formula to determine orientation without building a LinearRing.
+        x = coords[:, 0]
+        y = coords[:, 1]
+        area2 = np.dot(x[:-1], y[1:]) - np.dot(x[1:], y[:-1])
+        polys.append(Polygon(coords))
+        ccw.append(area2 > 0)
 
-    fills = [Polygon(r).buffer(0.5) for r in lr if r.is_ccw]
-    holes = [Polygon(r).buffer(-0.5) for r in lr if not r.is_ccw]
-
-    if not fills:
+    if not polys:
         return None
 
-    mask = shapely.ops.unary_union(fills)
-    if holes:
-        mask = mask.difference(shapely.ops.unary_union(holes))
+    polys_arr = np.asarray(polys, dtype=object)
+    ccw_arr = np.asarray(ccw, dtype=bool)
+
+    fills = polys_arr[ccw_arr]
+    holes = polys_arr[~ccw_arr]
+
+    if fills.size == 0:
+        return None
+
+    # Vectorized buffer is much faster than per-polygon buffer().
+    mask = shapely.union_all(shapely.buffer(fills, 0.5))
+    if holes.size:
+        mask = mask.difference(shapely.union_all(shapely.buffer(holes, -0.5)))
 
     return mask
 
@@ -205,13 +226,15 @@ def _build_hatch(
     r = np.zeros(shape=(img.shape[0] + 2, img.shape[1] + 2))
     r[1:-1, 1:-1] = img
 
-    # Find contours at a constant value of 0.8
-    contours = [measure.find_contours(r, levels[i]) for i in range(n_levels)]
-
     mls = [shapely.from_wkt("MULTILINESTRING EMPTY") for i in range(n_levels)]
 
+    # Run the per-level contour finding and mask building in parallel; both
+    # `find_contours` (NumPy/Cython) and Shapely 2.x GEOS calls release the GIL.
+    with ThreadPoolExecutor(max_workers=n_levels) as pool:
+        contours = list(pool.map(lambda lv: measure.find_contours(r, lv), levels))
+        mask = list(pool.map(_build_mask, contours[::-1]))
+
     try:
-        mask = [_build_mask(i) for i in contours[::-1]]
 
         # Spacing considers interleaved lines from different levels
         delta_factors = [2 ** (n_levels - 1)]
@@ -248,15 +271,14 @@ def _build_hatch(
 
         frame = Polygon([(3, 3), (w - 6, 3), (w - 6, h - 6), (3, h - 6)])
 
-        mls_ = [
-            MultiLineString(MultiLineString(lines[i]).difference(mask[i]).intersection(frame))
-            for i in range(n_levels)
-        ]
+        def _process_level(idx):
+            clipped = MultiLineString(
+                MultiLineString(lines[idx]).difference(mask[idx]).intersection(frame)
+            )
+            return MultiLineString(shapely.ops.linemerge(list(clipped.geoms)))
 
-        mls = [
-            MultiLineString(shapely.ops.linemerge([i for i in mls_[j].geoms]))
-            for j in range(n_levels)
-        ]
+        with ThreadPoolExecutor(max_workers=n_levels) as pool:
+            mls = list(pool.map(_process_level, range(n_levels)))
 
     except Exception as exc:
         print(f"Error: {exc}")
